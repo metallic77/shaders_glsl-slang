@@ -85,7 +85,7 @@ void main()
 
 // Vertex and Fragment processors calculate vec4 multiply/add etc operations in 1 cycle. 
 // Either you multiply a vec4 to a vec4 or a float to a float will cost 1 cycle
-// dot and sin cost 1 cycle. Multiply and add cost 1 cycle
+// dot and sin cost 1 cycle. "Multiply and add" cost 1 cycle
 
 vec3 colour = texture2D(Texture, tc).rgb;
 
