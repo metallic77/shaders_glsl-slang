@@ -1,102 +1,126 @@
-/*
-    A hack of crt-pi - A Raspberry Pi friendly CRT shader.
-    By DariusG 	
-    Copyright (C) 2015-2016 davej
 
-    This program is free software; you can redistribute it and/or modify it
-    under the terms of the GNU General Public License as published by the Free
-    Software Foundation; either version 2 of the License, or (at your option)
-    any later version.
+// parameter lines here
 
-*/
-#pragma parameter SCANLINE_WEIGHT "Scanline Brightness" 0.5 0.0 1.0 0.1
-
-
-#define pi 6.28306
-
+#pragma parameter SCANLINE "Scanline Brightness" 0.6 0.0 1.0 0.05
+#pragma parameter MASK "MASK Brightness" 0.7 0.0 1.0 0.05
+#pragma parameter BOOST "Brightness Boost" 1.5 1.0 2.0 0.1
+// defines here
+#define pi 3.141529
+ 
+ #if defined(VERTEX)
+////////////////////////////////////////////////////////////
+#if __VERSION__ >= 130
+#define COMPAT_VARYING out
+#define COMPAT_ATTRIBUTE in
+#define COMPAT_TEXTURE texture
+#else
+#define COMPAT_VARYING varying 
+#define COMPAT_ATTRIBUTE attribute 
+#define COMPAT_TEXTURE texture2D
+#endif
 
 #ifdef GL_ES
 #define COMPAT_PRECISION mediump
-precision mediump float;
 #else
 #define COMPAT_PRECISION
 #endif
 
-#ifdef PARAMETER_UNIFORM
-uniform COMPAT_PRECISION float MASK;
-uniform COMPAT_PRECISION float SCANLINE_WEIGHT;
-uniform COMPAT_PRECISION float BLOOM;
-#else
+COMPAT_ATTRIBUTE vec4 VertexCoord;
+COMPAT_ATTRIBUTE vec4 COLOR;
+COMPAT_ATTRIBUTE vec4 TexCoord;
+COMPAT_VARYING vec4 COL0;
+COMPAT_VARYING vec4 TEX0;
+COMPAT_VARYING float pixel;
+COMPAT_VARYING vec2 omega;
 
-#define MASK 0.70
-#define SCANLINE_WEIGHT 6.0
-#define BLOOM 1.5
+uniform mat4 MVPMatrix;
+uniform COMPAT_PRECISION int FrameDirection;
+uniform COMPAT_PRECISION int FrameCount;
+uniform COMPAT_PRECISION vec2 OutputSize;
+uniform COMPAT_PRECISION vec2 TextureSize;
+uniform COMPAT_PRECISION vec2 InputSize;
+
+// vertex compatibility #defines
+#define vTexCoord TEX0.xy
+
+void main()
+{
+    gl_Position = MVPMatrix * VertexCoord;
+    TEX0.xy = TexCoord.xy*1.0001;
+    pixel = 0.35/TextureSize.x;
+    omega = vec2(4.0*pi * OutputSize.x, pi *2.0*TextureSize.y);
+}
+
+#elif defined(FRAGMENT)
+//////////////////////////////////////////////////////////////
+#if __VERSION__ >= 130
+#define COMPAT_VARYING in
+#define COMPAT_TEXTURE texture
+out vec4 FragColor;
+#else
+#define COMPAT_VARYING varying
+#define FragColor gl_FragColor
+#define COMPAT_TEXTURE texture2D
 #endif
 
-/* COMPATIBILITY
-   - GLSL compilers
-*/
+#ifdef GL_ES
+#ifdef GL_FRAGMENT_PRECISION_HIGH
+precision highp float;
+#else
+precision mediump float;
+#endif
+#define COMPAT_PRECISION mediump
+#else
+#define COMPAT_PRECISION
+#endif
 
-uniform vec2 TextureSize;
-varying vec2 TEX0;
-varying float omega;
-
-
-
-#if defined(VERTEX)
-uniform mat4 MVPMatrix;
-attribute vec4 VertexCoord;
-attribute vec2 TexCoord;
-uniform vec2 InputSize;
-uniform vec2 OutputSize;
-
-void main()
-{
-	TEX0 = TexCoord*1.0001;                    // 1 cycle
-	gl_Position = MVPMatrix * VertexCoord;     // 1 cycle
-        omega = TEX0.y * pi* TextureSize.y;        // 2 cycles
-}
-#elif defined(FRAGMENT)
-
+uniform COMPAT_PRECISION int FrameDirection;
+uniform COMPAT_PRECISION int FrameCount;
+uniform COMPAT_PRECISION vec2 OutputSize;
+uniform COMPAT_PRECISION vec2 TextureSize;
+uniform COMPAT_PRECISION vec2 InputSize;
 uniform sampler2D Texture;
+COMPAT_VARYING vec4 TEX0;
+COMPAT_VARYING float pixel;
+COMPAT_VARYING vec2 omega;
 
-#define SourceSize vec4(TextureSize, 1.0 / TextureSize) //either TextureSize or InputSize
+// fragment compatibility #defines
+#define Source Texture
+#define vTexCoord TEX0.xy
 
-float CalcScanLine(float dy)
-{
-        return 0.5 + sin(omega)*0.5  ;  // 1 cycles
-}
+#ifdef PARAMETER_UNIFORM
+// All parameter floats need to have COMPAT_PRECISION in front of them
+uniform COMPAT_PRECISION float whatever;
+uniform COMPAT_PRECISION float SCANLINE;
+uniform COMPAT_PRECISION float MASK;
+uniform COMPAT_PRECISION float BOOST;
+
+#else
+#define whatever 0.0
+#define SCANLINE 0.7
+#define MASK 0.8
+#define BOOST 1.5
+
+#endif
+
+//////////////////////////////////////////////////////////////////
 
 void main()
 {
-      	vec2 pos = TEX0;
-		vec2 OGL2pos = pos * TextureSize;          // 1 cycle    // this could be moved to vertex ?
-
-		float tempY = floor(OGL2pos.y) + 0.5;      // 2 cycles? floor too
-		float yCoord = tempY / TextureSize.y;      // 1 cycle
-		float dy = OGL2pos.y - tempY;              // 1 cycle	  // up to here move to vertex and out yCoord and dy?
-		float uy = yCoord + (dy*dy*dy)*SourceSize.w; //4 cycles                             
-		vec2 tc = vec2(pos.x, uy); 	// 10 cycles total for tc?
-
-// Vertex and Fragment processors calculate vec4 multiply/add etc operations in 1 cycle. 
-// Either you multiply a vec4 to a vec4 or a float to a float will cost 1 cycle
-// dot and sin cost 1 cycle. "Multiply and add" cost 1 cycle
-
-vec3 colour = texture2D(Texture, tc).rgb;
-
-//SCANLINES
-		float scanLineWeight = CalcScanLine(TEX0.y);   // costed 1 cycles
-		scanLineWeight = mix(scanLineWeight,1.0,SCANLINE_WEIGHT); //1 cycles? probably more		       // 1 cycle
-		colour *= scanLineWeight; // 1 cycle 
-
-		//float whichMask = fract((gl_FragCoord.x*1.0001) * 0.5);    
-		//vec3 mask;
-		//if (whichMask < 0.5) mask = vec3(MASK);		    
-		//else mask = vec3(1.0);				   
-		//colour *= mask;							
-		
-		gl_FragColor = vec4(colour, 1.0);
-
+	vec3 color1 = 0.75*COMPAT_TEXTURE(Source,vTexCoord).rgb;
+	vec3 color2 = COMPAT_TEXTURE(Source,vTexCoord + vec2(pixel,0.0)).rgb;
+	vec3 color3 = COMPAT_TEXTURE(Source,vTexCoord - vec2(pixel,0.0)).rgb;
+	vec3 color = (color1 + 0.25*(color2 * color3));
+	vec3 lumweight = vec3(0.22,0.7,0.08);
+	float lum = dot(color,lumweight);
+	
+	vec2 scan = sin(vTexCoord*omega);
+	scan.y = mix(scan.y,1.0,SCANLINE);
+	scan.x = mix(scan.x,1.0,MASK);
+	color *= scan.y;	
+	color *= scan.x;
+	color *= mix(1.0,BOOST, lum);
+	gl_FragColor = vec4(color, 1.0);
 	}
 
 #endif
