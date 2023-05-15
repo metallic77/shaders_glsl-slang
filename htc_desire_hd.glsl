@@ -1,6 +1,7 @@
 /*
-  
-
+  A tiny footpring shader
+  that would work ok at 
+  small screens 480p and above
 */
 #pragma parameter SCANLINE_WEIGHT "Scanline Brightness" 0.4 0.0 1.0 0.1
 #pragma parameter BLOOM "Bloom" 1.3 1.0 2.0 0.05
