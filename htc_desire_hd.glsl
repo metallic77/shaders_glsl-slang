@@ -1,83 +1,76 @@
+/*
+  
 
-// parameter lines here
+*/
+#pragma parameter SCANLINE_WEIGHT "Scanline Brightness" 0.4 0.0 1.0 0.1
+#pragma parameter BLOOM "Bloom" 1.3 1.0 2.0 0.05
 
-#pragma parameter SCANLINE "Scanline Brightness" 0.6 0.0 1.0 0.05
-#pragma parameter MASK "MASK Brightness" 0.8 0.0 1.0 0.05
-#pragma parameter BOOST "Brightness Boost" 1.8 1.0 2.5 0.1
-#pragma parameter SATURATION "Saturation"  1.25 0.0 2.0 0.05
 
-// defines here
-#define pi 3.141529
- 
+#define pi 3.14159
+
 #ifdef GL_ES
-#ifdef GL_FRAGMENT_PRECISION_HIGH
-precision highp float;
-#else
-precision mediump float;
-#endif
 #define COMPAT_PRECISION mediump
+precision mediump float;
 #else
 #define COMPAT_PRECISION
 #endif
 
-uniform  float whatever;
-uniform  float SCANLINE;
-uniform  float MASK;
-uniform  float BOOST;
-uniform  float SATURATION;
+#ifdef PARAMETER_UNIFORM
+uniform COMPAT_PRECISION float SCANLINE_WEIGHT;
+uniform COMPAT_PRECISION float BLOOM;
+#else
 
-#define whatever 0.0
-#define SCANLINE 0.7
-#define MASK 0.8
-#define BOOST 1.5
-#define SATURATION 1.0
+#define SCANLINE_WEIGHT 1.0
+#define BLOOM 1.0
+#endif
 
+/* COMPATIBILITY
+   - GLSL compilers
+*/
 
+uniform vec2 TextureSize;
 varying vec2 TEX0;
-varying float pixel;
-varying vec2 omega;
 
- #if defined(VERTEX)
-
-attribute vec4 VertexCoord;
-attribute vec4 TexCoord;
-
-
+#if defined(VERTEX)
 uniform mat4 MVPMatrix;
-uniform  int FrameCount;
-uniform  vec2 OutputSize;
-uniform  vec2 TextureSize;
-uniform  vec2 InputSize;
-
+attribute vec4 VertexCoord;
+attribute vec2 TexCoord;
+uniform vec2 InputSize;
+uniform vec2 OutputSize;
 
 void main()
 {
-    gl_Position = MVPMatrix * VertexCoord;
-    TEX0 = TexCoord.xy*1.0001;
-    pixel = 0.35/TextureSize.x;
-    omega = vec2(4.0*pi * OutputSize.x, pi *2.0*TextureSize.y);
+	TEX0 = TexCoord;                    
+	gl_Position = MVPMatrix * VertexCoord;     
 }
 
 #elif defined(FRAGMENT)
+
 uniform sampler2D Texture;
+
+#define vTexCoord TEX0.xy
+#define SourceSize vec4(TextureSize, 1.0 / TextureSize) //either TextureSize or InputSize
+#define FragColor gl_FragColor
+#define Source Texture
+
 
 void main()
 {
-	vec3 color1 = 0.75*texture2D(Texture,TEX0).rgb;
-	vec3 color2 = texture2D(Texture,TEX0 + vec2(pixel,0.0)).rgb;
-	vec3 color3 = texture2D(Texture,TEX0 - vec2(pixel,0.0)).rgb;
-	vec3 color = (color1 + 0.25*(color2 * color3));
-	vec3 lumweight = vec3(0.22,0.7,0.08);
-	float lum = dot(color,lumweight);
-	
-	vec2 scan = sin(TEX0.xy*omega);
-	scan.y = mix(scan.y,1.0,SCANLINE);
-	scan.x = mix(scan.x,1.0,MASK);
-	color *= scan.y;	
-	color *= scan.x;
-	color *= mix(1.0,BOOST, lum);
-	color = mix(vec3(lum),color, SATURATION);
-	gl_FragColor = vec4(color, 1.0);
-	}
+	float OGL2Pos = vTexCoord.y*SourceSize.y;
+	float cent = floor(OGL2Pos)+0.5;
+	float ycoord = cent*SourceSize.w; 
+	float p = 2.0*(OGL2Pos - cent); 
 
+	p = p*p*p; 
+	p *= 0.5;
+	p = p*SourceSize.w; 
+
+    vec3 res = texture2D(Source, vec2(vTexCoord.x, ycoord+p)).rgb;
+    res *= SCANLINE_WEIGHT*sin(fract(OGL2Pos*0.999)*pi) + 1.0-SCANLINE_WEIGHT ;
+    
+    float lum = dot(vec3(0.22,0.7,0.08), res);
+	res *= mix(0.85,BLOOM, lum); 
+
+	FragColor = vec4(res, 1.0);
+}
 #endif
