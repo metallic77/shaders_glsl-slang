@@ -81,8 +81,8 @@ void main()
 // If SCANLINE_WEIGHT is 1.0 on the same case, we will get a total 0. Total black lines
 // 1.0*0.0 + 1.0-1.0 = 0.0 
 // SCANLINE_WEIGHT = how much brightness % we lose on dark lines.   
-   res *=  0.6*sin(fract(pos.y*SourceSize.y)*pi)+0.4;
-   res *= 0.8*abs(sin(vTexCoord.x*pi*OutputSize.x*0.5))+0.2;
+   res *=  0.6*sin(fract(pos.y*SourceSize.y)*pi)+0.4; // 0.6 is SCANLINE_WEIGHT
+   res *= 0.8*abs(sin(vTexCoord.x*pi*OutputSize.x*0.5))+0.2; // 0.8 is MASK 
    res = mix(vec3(lum), res, 1.1);
    res *= mix(0.9, 1.4, lum);
    FragColor = vec4(res,1.0);
