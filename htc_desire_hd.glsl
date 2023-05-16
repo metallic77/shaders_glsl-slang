@@ -1,9 +1,8 @@
 /*
-  A tiny footpring shader
-  that would work ok at 
-  small screens 480p and above
+  
+
 */
-#pragma parameter SCANLINE_WEIGHT "Scanline Brightness" 0.4 0.0 1.0 0.1
+#pragma parameter SCANLINE_WEIGHT "Scanline Strength" 0.3 0.0 1.0 0.1
 #pragma parameter BLOOM "Bloom" 1.3 1.0 2.0 0.05
 
 
@@ -60,13 +59,13 @@ void main()
 	float OGL2Pos = vTexCoord.y*SourceSize.y;
 	float cent = floor(OGL2Pos)+0.5;
 	float ycoord = cent*SourceSize.w; 
-	float p = 2.0*(OGL2Pos - cent); 
+	//float p = 2.0*(OGL2Pos - cent); 
 
-	p = p*p*p; 
-	p *= 0.5;
-	p = p*SourceSize.w; 
+	//p = p*p*p; 
+	//p *= 0.5;
+	//p = p*SourceSize.w; 
 
-    vec3 res = texture2D(Source, vec2(vTexCoord.x, ycoord+p)).rgb;
+    vec3 res = texture2D(Source, vec2(vTexCoord.x, ycoord)).rgb;
     res *= SCANLINE_WEIGHT*sin(fract(OGL2Pos*0.999)*pi) + 1.0-SCANLINE_WEIGHT ;
     
     float lum = dot(vec3(0.22,0.7,0.08), res);
