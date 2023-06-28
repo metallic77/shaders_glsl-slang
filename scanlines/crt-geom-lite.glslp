@@ -1,0 +1,20 @@
+shaders = "3"
+feedback_pass = "0"
+shader0 = "../misc/shaders/simple_color_controls.glsl"
+filter_linear0 = "false"
+
+shader1 = "../misc/shaders/chromaticity.glsl"
+filter_linear1 = "false"
+
+shader2 = "shaders/crt-geom-scanlines.glsl"
+filter_linear2 = "true"
+
+TEMP = "7511.000000"
+SAT = "1.100000"
+BRIGHTNESS = "0.950000"
+BLACK = "0.020000"
+postbr = "1.100000"
+gamma_in = "2.200000"
+gamma_out_green = "2.500000"
+gamma_out_blue = "2.400000"
+COLOR_MODE = "1.000000"
