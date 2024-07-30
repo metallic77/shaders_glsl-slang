@@ -1,4 +1,4 @@
-
+#version 110
 
 // Parameter lines go here:
 
@@ -7,12 +7,11 @@
 #pragma parameter scan2 "Scanline bright" 1.05 0.0 2.5 0.05
 #pragma parameter CONVX "Convergence X" 0.35 -2.0 2.0 0.05
 #pragma parameter CONVY "Convergence Y" -0.15 -2.0 2.0 0.05
-#pragma parameter Shadowmask "Mask:0:cgwg,1-2:lottes,3:gw,4:slot " 0.0 -1.0 4.0 1.0
+#pragma parameter Shadowmask "Mask:0:CGWG,1-2:Lottes,3:BW,4:Fine slot" 0.0 -1.0 4.0 1.0
 #pragma parameter MaskDark "Mask Dark" 0.5 0.0 2.0 0.1
 #pragma parameter MaskLight "Mask Light" 1.5 0.0 2.0 0.1
-#pragma parameter BRIGHTBOOST1 "Bright boost" 1.1 0.0 2.0 0.05
-#pragma parameter GAMMA_OUT "Gamma Out" 2.2 0.0 4.0 0.1
-#pragma parameter SATURATION "Saturation" 1.2 0.0 2.0 0.05
+#pragma parameter BRIGHTBOOST1 "Dark boost" 1.35 0.0 2.0 0.05
+#pragma parameter SATURATION "Saturation" 1.0 0.0 2.0 0.05
 
 
 
@@ -40,6 +39,7 @@
 COMPAT_ATTRIBUTE vec4 VertexCoord;
 COMPAT_ATTRIBUTE vec4 TexCoord;
 COMPAT_VARYING vec4 TEX0;
+COMPAT_VARYING vec2 scale;
 
 uniform mat4 MVPMatrix;
 uniform COMPAT_PRECISION int FrameDirection;
@@ -57,6 +57,7 @@ void main()
 {
    gl_Position = MVPMatrix * VertexCoord;
    TEX0.xy = TexCoord.xy*1.0001;
+   scale = SourceSize.xy/InputSize.xy;
 }
 
 #elif defined(FRAGMENT)
@@ -89,11 +90,11 @@ uniform COMPAT_PRECISION vec2 TextureSize;
 uniform COMPAT_PRECISION vec2 InputSize;
 uniform sampler2D Texture;
 COMPAT_VARYING vec4 TEX0;
+COMPAT_VARYING vec2 scale;
 
 // compatibility #defines
 #define Source Texture
 #define vTexCoord TEX0.xy
-#define iChannel0 Texture
 #define iTime (float(FrameCount) / 60.0)
 
 #define SourceSize vec4(TextureSize, 1.0 / TextureSize) //either TextureSize or InputSize
@@ -107,7 +108,6 @@ uniform COMPAT_PRECISION float scan2;
 uniform COMPAT_PRECISION float CONVX;
 uniform COMPAT_PRECISION float CONVY;
 uniform COMPAT_PRECISION float SATURATION;
-uniform COMPAT_PRECISION float GAMMA_OUT;
 uniform COMPAT_PRECISION float BRIGHTBOOST1;
 uniform COMPAT_PRECISION float Shadowmask;
 uniform COMPAT_PRECISION float MaskDark;
@@ -124,7 +124,6 @@ uniform COMPAT_PRECISION float MaskLight;
 #define CONVY -0.15
 #define SATURATION 1.2 
 #define BRIGHTBOOST1 1.1 
-#define GAMMA_OUT 2.2
 #define Shadowmask 0.0
 #define MaskDark 0.5
 #define MaskLight 1.5
@@ -217,59 +216,49 @@ vec3 mask(vec2 x)
 }
 
 
-vec3 saturation (vec3 textureColor)
-{
-
-    vec3 luminanceWeighting = vec3(0.3,0.6,0.1);
-    float luminance = dot(textureColor.rgb, luminanceWeighting);
-    vec3 greyScaleColor = vec3(luminance);
-
-    vec3 res = vec3(mix(greyScaleColor, textureColor.rgb, SATURATION));
-    return res;
-}
-
 
 vec2 Warp(vec2 coord) {
-    vec2 cc = coord - vec2(0.5,0.5);
+    vec2 cc = coord - 0.5;
     float dist = dot(cc, cc) * WARP;
-    dist-=WARP/4.0;
+    dist -= WARP/4.0;
     return coord + cc * (1.0 - dist) * dist;
 }
 
-mat3 vign( vec2 vpos )
-{
-    vpos *= 1.0 - vpos;
-    float vig = vpos.x * vpos.y * 40.0;
-    vig = min(pow(vig, 0.2), 1.0); 
-   
-    return mat3(vig, 0, 0,
-                 0,   vig, 0,
-                 0,    0, vig);
-
-}
 void main()
 {
-    vec2 uv = Warp(TEX0.xy*TextureSize.xy/InputSize.xy)*(InputSize.xy/TextureSize.xy);
-    vec2 OGL2Pos = uv * SourceSize.xy;
-    vec2 fp = fract(OGL2Pos);
+    vec2 uv = Warp(TEX0.xy*scale)/scale;
+    float scanpos = uv.y;
+    uv.y = uv.y*SourceSize.y + 0.5;
+    float iuv = floor( uv.y );
+    float fuv = fract( uv.y );
+    uv.y = iuv + fuv*fuv*(3.0-2.0*fuv);
+    uv.y = (uv.y - 0.5)*SourceSize.w;
+   
+    vec2 OGL2Pos = scanpos * SourceSize.xy;
+    vec2 fp = fract(OGL2Pos-0.5);
+
     // Take multiple samples to displace different color channels
-    vec3 sample1 = COMPAT_TEXTURE(iChannel0, vec2(uv.x-CONVX/1000.0,uv.y-CONVY/1000.0)).rgb; 
-    vec3 sample2 = COMPAT_TEXTURE(iChannel0, uv).rgb;
-    vec3 sample3 = COMPAT_TEXTURE(iChannel0, vec2(uv.x+CONVX/1000.0,uv.y+CONVY/1000.0)).rgb;
+    vec3 sample1 = COMPAT_TEXTURE(Source, vec2(uv.x-CONVX/1000.0,uv.y-CONVY/1000.0)).rgb; 
+    vec3 sample2 = COMPAT_TEXTURE(Source, uv).rgb;
+    vec3 sample3 = COMPAT_TEXTURE(Source, vec2(uv.x+CONVX/1000.0,uv.y+CONVY/1000.0)).rgb;
  
-    vec3 color = vec3(0.5*sample1.r+0.5*sample2.r, 0.25*sample1.g+0.5*sample2.g+0.25*sample3.g, 0.5*sample2.b+0.5*sample3.b);   
-    color*=color;;
-    float lum=color.r*0.3 + color.g*0.6 + color.b*0.1;
+    vec3 color = vec3(0.5*sample1.r + 0.5*sample2.r, 
+                     0.25*sample1.g + 0.5*sample2.g + 0.25*sample3.g, 
+                                      0.5*sample2.b +  0.5*sample3.b);  
 
-    color=color*scanLine(fp.y,lum)+color*scanLine(1.0-fp.y,lum);
-    color*=mask(gl_FragCoord.xy*1.0001);
+    color *= color;;
+    float lum = dot(vec3(0.25),color);
 
-    color=pow(color,vec3(1.0/GAMMA_OUT,1.0/GAMMA_OUT,1.0/GAMMA_OUT)); 
-    color*=mix(1.0, BRIGHTBOOST1, lum);    
+    color = color*scanLine(fp.y,lum) + color*scanLine(1.0-fp.y,lum);
+    color *= mask(gl_FragCoord.xy*1.0001);
 
-    if (SATURATION != 1.0) color = saturation(color);
-    color*= vign(uv);
+    color=sqrt(color); 
+    color*=mix(BRIGHTBOOST1, 1.0, lum);    
     
+    float gr = dot(vec3(0.3,0.6,0.1),color);
+    vec3 grays = vec3(gr);
+    color = mix(grays,color,SATURATION);
+
     #if defined GL_ES
     // hacky clamp fix for GLES
     vec2 bordertest = (uv);
