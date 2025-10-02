@@ -3,14 +3,14 @@
 // Parameter lines go here:
 
 #pragma parameter WARP "Curvature" 0.12 0.0 1.0 0.02
-#pragma parameter scan1 "Scanline dark" 1.35 0.0 2.5 0.05
-#pragma parameter scan2 "Scanline bright" 1.05 0.0 2.5 0.05
-#pragma parameter CONVX "Convergence X" 0.35 -2.0 2.0 0.05
-#pragma parameter CONVY "Convergence Y" -0.15 -2.0 2.0 0.05
+#pragma parameter scan1 "Scanline dark" 0.85 0.0 2.5 0.05
+#pragma parameter scan2 "Scanline bright" 0.6 0.0 2.5 0.05
+#pragma parameter CONVX "Convergence X" 0.6 -2.0 2.0 0.05
+#pragma parameter CONVY "Convergence Y" 0.0 -2.0 2.0 0.05
 #pragma parameter Shadowmask "Mask:0:CGWG,1-2:Lottes,3:BW,4:Fine slot" 0.0 -1.0 4.0 1.0
-#pragma parameter MaskDark "Mask Dark" 0.5 0.0 2.0 0.1
-#pragma parameter MaskLight "Mask Light" 1.5 0.0 2.0 0.1
-#pragma parameter BRIGHTBOOST1 "Dark boost" 1.35 0.0 2.0 0.05
+#pragma parameter MaskDark "Mask Dark" 0.7 0.0 2.0 0.1
+#pragma parameter MaskLight "Mask Light" 1.3 0.0 2.0 0.1
+#pragma parameter BRIGHTBOOST1 "Bright boost" 1.25 1.0 2.0 0.05
 #pragma parameter SATURATION "Saturation" 1.0 0.0 2.0 0.05
 
 
@@ -40,6 +40,7 @@ COMPAT_ATTRIBUTE vec4 VertexCoord;
 COMPAT_ATTRIBUTE vec4 TexCoord;
 COMPAT_VARYING vec4 TEX0;
 COMPAT_VARYING vec2 scale;
+COMPAT_VARYING vec2 maskpos;
 
 uniform mat4 MVPMatrix;
 uniform COMPAT_PRECISION int FrameDirection;
@@ -58,6 +59,7 @@ void main()
    gl_Position = MVPMatrix * VertexCoord;
    TEX0.xy = TexCoord.xy*1.0001;
    scale = SourceSize.xy/InputSize.xy;
+   maskpos = TEX0.xy*OutputSize.xy*scale;
 }
 
 #elif defined(FRAGMENT)
@@ -91,6 +93,7 @@ uniform COMPAT_PRECISION vec2 InputSize;
 uniform sampler2D Texture;
 COMPAT_VARYING vec4 TEX0;
 COMPAT_VARYING vec2 scale;
+COMPAT_VARYING vec2 maskpos;
 
 // compatibility #defines
 #define Source Texture
@@ -131,15 +134,6 @@ uniform COMPAT_PRECISION float MaskLight;
 
 
 #endif
-
-float scanLine (float x,float color)
-{
-    float scan = mix(6.0,8.0,x);
-    float tmp = mix(scan1,scan2, color);
-    float ex = x*tmp;
-    return exp2(-scan*ex*ex);
-}
-
 
 vec3 mask(vec2 x)
 {  
@@ -220,19 +214,28 @@ vec3 mask(vec2 x)
 vec2 Warp(vec2 coord) {
     vec2 cc = coord - 0.5;
     float dist = dot(cc, cc) * WARP;
-    dist -= WARP/4.0;
+    dist -= WARP*0.25;
     return coord + cc * (1.0 - dist) * dist;
+}
+
+float scanLine (float y,float color)
+{
+    float f = y*2.0-1.0; f = abs(f);
+    f = f*f*(3.0-2.0*f);    
+    float scan = mix(scan1,scan2,color);
+    f = f*scan*BRIGHTBOOST1 + 1.0-scan;
+    return f;
 }
 
 void main()
 {
     vec2 uv = Warp(TEX0.xy*scale)/scale;
     float scanpos = uv.y;
-    uv.y = uv.y*SourceSize.y + 0.5;
-    float iuv = floor( uv.y );
-    float fuv = fract( uv.y );
-    uv.y = iuv + fuv*fuv*(3.0-2.0*fuv);
-    uv.y = (uv.y - 0.5)*SourceSize.w;
+        uv.y = uv.y*SourceSize.y + 0.5;
+    float i = floor( uv.y );
+    float f = fract( uv.y );
+        uv.y = i + f*f*(3.0-2.0*f);
+        uv.y = (uv.y - 0.5)*SourceSize.w;
    
     vec2 OGL2Pos = scanpos * SourceSize.xy;
     vec2 fp = fract(OGL2Pos-0.5);
@@ -245,19 +248,15 @@ void main()
     vec3 color = vec3(0.5*sample1.r + 0.5*sample2.r, 
                      0.25*sample1.g + 0.5*sample2.g + 0.25*sample3.g, 
                                       0.5*sample2.b +  0.5*sample3.b);  
+    color *= color;
+    float lum = dot(vec3(0.333),color);
 
-    color *= color;;
-    float lum = dot(vec3(0.25),color);
+    color *= scanLine(fp.y,lum);
+    color *= mask(maskpos);
 
-    color = color*scanLine(fp.y,lum) + color*scanLine(1.0-fp.y,lum);
-    color *= mask(gl_FragCoord.xy*1.0001);
-
-    color=sqrt(color); 
-    color*=mix(BRIGHTBOOST1, 1.0, lum);    
-    
-    float gr = dot(vec3(0.3,0.6,0.1),color);
-    vec3 grays = vec3(gr);
-    color = mix(grays,color,SATURATION);
+    float weight= dot(vec3(0.3,0.6,0.1),color);
+    vec3 grayscale = vec3(weight);
+    color = mix(grayscale, color, SATURATION);
 
     #if defined GL_ES
     // hacky clamp fix for GLES
@@ -268,6 +267,6 @@ void main()
         color = vec3(0.0);
 #endif
 
-    FragColor = vec4(color,1.0);
+    FragColor.rgb = sqrt(color);
 } 
 #endif
